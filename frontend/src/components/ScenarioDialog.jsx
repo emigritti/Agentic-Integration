@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -6,7 +6,6 @@ import Card from '@mui/material/Card';
 import CardActionArea from '@mui/material/CardActionArea';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -14,12 +13,13 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Grid from '@mui/material/Grid';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
-import ListItemText from '@mui/material/ListItemText';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ArchitectureFlow from './ArchitectureFlow';
+import { FLOW_STEPS } from '../constants/flowSteps';
 
 const INITIAL_STATE = {
   step: 'select', // 'select' | 'form' | 'loading' | 'result'
@@ -47,6 +47,8 @@ function isFormValid(scenario, formValues) {
       return val !== undefined && String(val).trim() !== '';
     });
 }
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function ScenarioSelector({ scenarios, selectedId, onSelect }) {
   return (
@@ -138,13 +140,13 @@ function ResultPanel({ result, error }) {
           </Typography>
           <List dense disablePadding>
             {result.actions_taken.map((action) => (
-              <ListItem key={action} disableGutters sx={{ py: 0 }}>
+              <ListItem key={action} disableGutters sx={{ py: 0.25 }}>
                 <Chip
                   label={action}
                   size="small"
                   variant="outlined"
                   color={severity}
-                  sx={{ mt: 0.5 }}
+                  sx={{ mt: 0.25 }}
                 />
               </ListItem>
             ))}
@@ -161,13 +163,29 @@ function ResultPanel({ result, error }) {
   );
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function ScenarioDialog({ open, agent, onClose }) {
   const [state, setState] = useState(INITIAL_STATE);
+
+  // Coordination refs: animation and API call may complete in any order
+  const animDoneRef = useRef(false);
+  const pendingResultRef = useRef(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   if (!agent) return null;
 
   const { step, selectedScenario, formValues, result, error } = state;
   const hasScenarios = agent.scenarios && agent.scenarios.length > 0;
+  const agentColor = agent.color ?? '#1565c0';
+  const flowSteps = selectedScenario ? (FLOW_STEPS[selectedScenario.eventType] ?? []) : [];
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleScenarioSelect = (scenario) => {
     setState((s) => ({ ...s, selectedScenario: scenario, step: 'form', formValues: {} }));
@@ -183,10 +201,35 @@ export default function ScenarioDialog({ open, agent, onClose }) {
 
   const handleClose = () => {
     onClose(result ? { ...result } : error ? { error } : null);
+    animDoneRef.current = false;
+    pendingResultRef.current = null;
     setState(INITIAL_STATE);
   };
 
+  /** Show result immediately or buffer it until the animation completes. */
+  const resolveResult = useCallback((resultData) => {
+    if (animDoneRef.current) {
+      if (mountedRef.current) {
+        setState((s) => ({ ...s, step: 'result', result: resultData.result, error: resultData.error }));
+      }
+    } else {
+      pendingResultRef.current = resultData;
+    }
+  }, []);
+
+  /** Called by ArchitectureFlow when the last node lights up. */
+  const handleAnimationComplete = useCallback(() => {
+    animDoneRef.current = true;
+    if (pendingResultRef.current !== null && mountedRef.current) {
+      const buffered = pendingResultRef.current;
+      pendingResultRef.current = null;
+      setState((s) => ({ ...s, step: 'result', result: buffered.result, error: buffered.error }));
+    }
+  }, []);
+
   const handleSubmit = async () => {
+    animDoneRef.current = false;
+    pendingResultRef.current = null;
     setState((s) => ({ ...s, step: 'loading', error: null }));
 
     const payload = normalizePayload(selectedScenario, formValues);
@@ -208,15 +251,14 @@ export default function ScenarioDialog({ open, agent, onClose }) {
 
       if (res.status === 409) {
         const data = await res.json().catch(() => ({}));
-        setState((s) => ({
-          ...s,
-          step: 'result',
+        resolveResult({
           result: {
             ...data,
             status: 'skipped',
             outcome: data.outcome || 'Evento già elaborato in precedenza',
           },
-        }));
+          error: null,
+        });
         return;
       }
 
@@ -226,25 +268,26 @@ export default function ScenarioDialog({ open, agent, onClose }) {
       }
 
       const data = await res.json();
-      setState((s) => ({ ...s, step: 'result', result: data }));
+      resolveResult({ result: data, error: null });
     } catch (err) {
-      setState((s) => ({
-        ...s,
-        step: 'result',
-        result: null,
-        error: err.message || 'Errore di connessione al backend',
-      }));
+      resolveResult({ result: null, error: err.message || 'Errore di connessione al backend' });
     }
   };
+
+  // ── Titles ────────────────────────────────────────────────────────────────
 
   const dialogTitle = () => {
     if (!hasScenarios) return agent.name;
     if (step === 'select') return `Seleziona scenario — ${agent.name}`;
     if (step === 'form') return selectedScenario?.label ?? '';
     if (step === 'loading') return 'Elaborazione in corso...';
-    if (step === 'result') return result?.status === 'success' ? 'Eseguito con successo' : 'Elaborazione completata';
+    if (step === 'result') {
+      return result?.status === 'success' ? 'Eseguito con successo' : 'Elaborazione completata';
+    }
     return agent.name;
   };
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <Dialog
@@ -257,12 +300,14 @@ export default function ScenarioDialog({ open, agent, onClose }) {
       <DialogTitle id="scenario-dialog-title">{dialogTitle()}</DialogTitle>
 
       <DialogContent dividers>
+        {/* No scenarios configured */}
         {!hasScenarios && (
           <Typography color="text.secondary" sx={{ py: 2 }}>
             Nessuno scenario configurato per questo agente.
           </Typography>
         )}
 
+        {/* Step: select */}
         {hasScenarios && step === 'select' && (
           <ScenarioSelector
             scenarios={agent.scenarios}
@@ -271,6 +316,7 @@ export default function ScenarioDialog({ open, agent, onClose }) {
           />
         )}
 
+        {/* Step: form */}
         {hasScenarios && step === 'form' && selectedScenario && (
           <ScenarioForm
             scenario={selectedScenario}
@@ -279,12 +325,21 @@ export default function ScenarioDialog({ open, agent, onClose }) {
           />
         )}
 
+        {/* Step: loading — architecture flow animation */}
         {step === 'loading' && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
+          <Box sx={{ py: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Esecuzione del flusso architetturale in corso...
+            </Typography>
+            <ArchitectureFlow
+              steps={flowSteps}
+              color={agentColor}
+              onComplete={handleAnimationComplete}
+            />
           </Box>
         )}
 
+        {/* Step: result */}
         {step === 'result' && <ResultPanel result={result} error={error} />}
       </DialogContent>
 
