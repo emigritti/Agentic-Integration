@@ -1,0 +1,58 @@
+networks:
+  agentic-net:
+    driver: bridge
+
+services:
+
+  # ── Reverse proxy — single external entry point ───────────────────────────
+  proxy:
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+    image: agentic-integration-proxy:latest
+    container_name: agentic-integration-proxy
+    ports:
+      - "8080:80"   # 8080 externally — porta 80 su Windows occupata (IIS/WAS)
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    networks:
+      - agentic-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── React dashboard — internal only ──────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: agentic-integration-frontend:latest
+    container_name: agentic-integration-frontend
+    expose:
+      - "80"
+    restart: unless-stopped
+    networks:
+      - agentic-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Backend API — reserved, not yet implemented ───────────────────────────
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   image: agentic-integration-backend:latest
+  #   container_name: agentic-integration-backend
+  #   expose:
+  #     - "8000"
+  #   restart: unless-stopped
+  #   networks:
+  #     - agentic-net
