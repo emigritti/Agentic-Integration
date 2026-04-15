@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { keyframes } from '@mui/system';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -27,7 +28,13 @@ const INITIAL_STATE = {
   formValues: {},
   result: null,
   error: null,
+  logLines: [],
 };
+
+const logBlink = keyframes`
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+`;
 
 function normalizePayload(scenario, formValues) {
   const payload = { ...formValues };
@@ -180,7 +187,7 @@ export default function ScenarioDialog({ open, agent, onClose }) {
 
   if (!agent) return null;
 
-  const { step, selectedScenario, formValues, result, error } = state;
+  const { step, selectedScenario, formValues, result, error, logLines } = state;
   const hasScenarios = agent.scenarios && agent.scenarios.length > 0;
   const agentColor = agent.color ?? '#1565c0';
   const flowSteps = selectedScenario ? (FLOW_STEPS[selectedScenario.eventType] ?? []) : [];
@@ -217,6 +224,19 @@ export default function ScenarioDialog({ open, agent, onClose }) {
     }
   }, []);
 
+  // Ref to auto-scroll the log panel to the bottom on each new entry
+  const logEndRef = useRef(null);
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
+  }, [logLines]);
+
+  /** Called by ArchitectureFlow each time a node activates — appends a log line. */
+  const handleStepActivate = useCallback((_index, step) => {
+    if (!step.log) return;
+    const time = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setState((s) => ({ ...s, logLines: [...s.logLines, { time, message: step.log }] }));
+  }, []);
+
   /** Called by ArchitectureFlow when the last node lights up. */
   const handleAnimationComplete = useCallback(() => {
     animDoneRef.current = true;
@@ -230,7 +250,7 @@ export default function ScenarioDialog({ open, agent, onClose }) {
   const handleSubmit = async () => {
     animDoneRef.current = false;
     pendingResultRef.current = null;
-    setState((s) => ({ ...s, step: 'loading', error: null }));
+    setState((s) => ({ ...s, step: 'loading', error: null, logLines: [] }));
 
     const payload = normalizePayload(selectedScenario, formValues);
     const envelope = {
@@ -325,7 +345,7 @@ export default function ScenarioDialog({ open, agent, onClose }) {
           />
         )}
 
-        {/* Step: loading — architecture flow animation */}
+        {/* Step: loading — architecture flow animation + live log */}
         {step === 'loading' && (
           <Box sx={{ py: 1 }}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -335,7 +355,56 @@ export default function ScenarioDialog({ open, agent, onClose }) {
               steps={flowSteps}
               color={agentColor}
               onComplete={handleAnimationComplete}
+              onStepActivate={handleStepActivate}
             />
+
+            {/* Live log panel */}
+            <Box
+              sx={{
+                mt: 2,
+                bgcolor: '#0d1117',
+                borderRadius: 1,
+                border: '1px solid #30363d',
+                p: 1.5,
+                height: 130,
+                overflowY: 'auto',
+                fontFamily: '"Fira Mono", "Consolas", "Courier New", monospace',
+                fontSize: '0.72rem',
+                lineHeight: 1.8,
+              }}
+              aria-label="Log di esecuzione"
+            >
+              {logLines.length === 0 ? (
+                <Box component="span" sx={{ color: '#484f58' }}>
+                  In attesa del primo step...
+                </Box>
+              ) : (
+                logLines.map((entry, i) => (
+                  <Box key={i} sx={{ display: 'flex', gap: 1 }}>
+                    <Box component="span" sx={{ color: '#484f58', flexShrink: 0 }}>
+                      [{entry.time}]
+                    </Box>
+                    <Box component="span" sx={{ color: '#58a6ff' }}>
+                      {entry.message}
+                    </Box>
+                  </Box>
+                ))
+              )}
+              {/* Blinking cursor */}
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-block',
+                  width: 7,
+                  height: '0.75em',
+                  bgcolor: '#58a6ff',
+                  ml: 0.5,
+                  verticalAlign: 'text-bottom',
+                  animation: `${logBlink} 1s step-start infinite`,
+                }}
+              />
+              <div ref={logEndRef} />
+            </Box>
           </Box>
         )}
 

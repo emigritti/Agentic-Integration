@@ -23,14 +23,15 @@ function FlowNode({ step, nodeState, color }) {
     <Paper
       elevation={isLit ? 3 : 0}
       sx={{
-        width: 78,
-        minHeight: 68,
+        width: 100,
+        minHeight: 130,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
         gap: 0.5,
-        p: 0.75,
+        p: 1,
+        pt: 1.25,
         border: 2,
         borderColor: isLit ? color : 'grey.300',
         bgcolor: isLit ? `${color}18` : 'grey.50',
@@ -42,24 +43,55 @@ function FlowNode({ step, nodeState, color }) {
     >
       <step.Icon
         sx={{
-          fontSize: 22,
+          fontSize: 24,
           color: isLit ? color : 'grey.400',
           transition: 'color 0.35s ease',
+          flexShrink: 0,
         }}
       />
+
+      {/* Step label */}
       <Typography
         component="div"
         align="center"
         sx={{
-          fontSize: '0.58rem',
+          fontSize: '0.62rem',
           lineHeight: 1.25,
-          fontWeight: isLit ? 700 : 400,
+          fontWeight: 700,
           color: isLit ? 'text.primary' : 'text.disabled',
-          transition: 'color 0.35s ease, font-weight 0.35s ease',
+          transition: 'color 0.35s ease',
           whiteSpace: 'pre-line',
         }}
       >
         {step.label}
+      </Typography>
+
+      {/* Divider */}
+      <Box
+        sx={{
+          width: '80%',
+          height: '1px',
+          bgcolor: isLit ? `${color}40` : 'grey.200',
+          transition: 'background-color 0.35s ease',
+          my: 0.25,
+          flexShrink: 0,
+        }}
+      />
+
+      {/* Description — what & why */}
+      <Typography
+        component="div"
+        align="center"
+        sx={{
+          fontSize: '0.52rem',
+          lineHeight: 1.4,
+          fontStyle: 'italic',
+          color: isLit ? 'text.secondary' : 'text.disabled',
+          transition: 'color 0.35s ease',
+          whiteSpace: 'pre-line',
+        }}
+      >
+        {step.description}
       </Typography>
     </Paper>
   );
@@ -69,14 +101,17 @@ function FlowNode({ step, nodeState, color }) {
  * Animated architecture flow diagram.
  * Each node lights up sequentially with STEP_DELAY_MS between steps.
  * Calls onComplete() after the last step activates.
+ * Calls onStepActivate(index, step) each time a node lights up.
  */
-export default function ArchitectureFlow({ steps, color, onComplete }) {
+export default function ArchitectureFlow({ steps, color, onComplete, onStepActivate }) {
   const [activeIndex, setActiveIndex] = useState(-1);
   const onCompleteRef = useRef(onComplete);
+  const onStepActivateRef = useRef(onStepActivate);
 
-  // Keep ref current without re-running the effect
+  // Keep refs current without re-running the effect
   useEffect(() => {
     onCompleteRef.current = onComplete;
+    onStepActivateRef.current = onStepActivate;
   });
 
   useEffect(() => {
@@ -85,8 +120,11 @@ export default function ArchitectureFlow({ steps, color, onComplete }) {
       return;
     }
 
-    const timers = steps.map((_, i) =>
-      setTimeout(() => setActiveIndex(i), INITIAL_DELAY_MS + i * STEP_DELAY_MS)
+    const timers = steps.map((step, i) =>
+      setTimeout(() => {
+        setActiveIndex(i);
+        onStepActivateRef.current?.(i, step);
+      }, INITIAL_DELAY_MS + i * STEP_DELAY_MS)
     );
 
     const finalTimer = setTimeout(
