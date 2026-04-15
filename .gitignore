@@ -1,2 +1,19 @@
 .gitattributes
 frontend/.dockerignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+frontend/node_modules/
+
+# Env
+.env
+*.env.local

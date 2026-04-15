@@ -25,19 +25,21 @@ describe('Dashboard', () => {
     });
   });
 
-  it('shows snackbar alert when an agent card is clicked', async () => {
+  // U-D-05: clicking a card now opens a dialog (not Snackbar directly)
+  it('U-D-05: clicking simple-reflex card opens the scenario dialog', async () => {
     renderDashboard();
     fireEvent.click(
       screen.getByRole('button', { name: /Esegui Simple Reflex Agents/i })
     );
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
-  it('snackbar message contains the agent name', async () => {
+  // U-D-06: clicking any card opens the dialog
+  it('U-D-06: clicking any agent card opens the scenario dialog', async () => {
     renderDashboard();
     fireEvent.click(
       screen.getByRole('button', { name: /Esegui Learning Agents/i })
     );
-    expect(await screen.findByText(/Learning Agents.*esecuzione/i)).toBeInTheDocument();
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 });

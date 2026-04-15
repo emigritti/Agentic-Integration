@@ -9,16 +9,29 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import AgentCard from './AgentCard';
+import ScenarioDialog from './ScenarioDialog';
 import { agents } from '../constants/agents';
 
 export default function Dashboard() {
-  const [snackbar, setSnackbar] = useState({ open: false, agentName: '' });
+  const [dialogState, setDialogState] = useState({ open: false, agent: null });
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   const handleRun = (agent) => {
-    setSnackbar({ open: true, agentName: agent.name });
+    setDialogState({ open: true, agent });
   };
 
-  const handleClose = (_event, reason) => {
+  const handleDialogClose = (result) => {
+    setDialogState({ open: false, agent: null });
+    if (result) {
+      const message = result.error
+        ? `Errore: ${result.error}`
+        : result.outcome || 'Elaborazione completata';
+      const severity = result.status === 'success' ? 'success' : result.error ? 'error' : 'info';
+      setSnackbar({ open: true, message, severity });
+    }
+  };
+
+  const handleSnackbarClose = (_event, reason) => {
     if (reason === 'clickaway') return;
     setSnackbar((prev) => ({ ...prev, open: false }));
   };
@@ -56,14 +69,27 @@ export default function Dashboard() {
         </Grid>
       </Container>
 
+      {dialogState.agent && (
+        <ScenarioDialog
+          open={dialogState.open}
+          agent={dialogState.agent}
+          onClose={handleDialogClose}
+        />
+      )}
+
       <Snackbar
         open={snackbar.open}
-        autoHideDuration={3500}
-        onClose={handleClose}
+        autoHideDuration={4000}
+        onClose={handleSnackbarClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert onClose={handleClose} severity="info" variant="filled" sx={{ width: '100%' }}>
-          Agente &quot;{snackbar.agentName}&quot; in esecuzione...
+        <Alert
+          onClose={handleSnackbarClose}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
         </Alert>
       </Snackbar>
     </Box>
