@@ -15,6 +15,7 @@ services:
       - "8080:80"   # 8080 externally — porta 80 su Windows occupata (IIS/WAS)
     depends_on:
       - frontend
+      - backend
     restart: unless-stopped
     networks:
       - agentic-net
@@ -44,15 +45,25 @@ services:
       retries: 3
       start_period: 10s
 
-  # ── Backend API — reserved, not yet implemented ───────────────────────────
-  # backend:
-  #   build:
-  #     context: ./backend
-  #     dockerfile: Dockerfile
-  #   image: agentic-integration-backend:latest
-  #   container_name: agentic-integration-backend
-  #   expose:
-  #     - "8000"
-  #   restart: unless-stopped
-  #   networks:
-  #     - agentic-net
+  # ── Backend API — FastAPI + Uvicorn (ADR-004, ADR-005, ADR-006) ──────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: agentic-integration-backend:latest
+    container_name: agentic-integration-backend
+    expose:
+      - "8000"
+    environment:
+      USE_STUB_SERVICES: "true"
+      LOG_LEVEL: "INFO"
+      MAX_EXECUTIONS_STORED: "100"
+    restart: unless-stopped
+    networks:
+      - agentic-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
